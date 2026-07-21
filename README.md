@@ -3,7 +3,7 @@
 **Contribution Number:** 2 
 **Student:** Jonathan Ballona Sanchez 
 **Issue:** https://github.com/orthogonalhq/nous-core/issues/320 
-**Status:** Waiting for AI301 course isntructor for topic confirmation
+**Status:** Phase 2 
 
 ---
 
@@ -52,19 +52,55 @@ There is no Zhipu provider anywhere in the codebase, no `providers/zhipu/` leaf,
 
 ### Environment Setup
 
-[Notes on setting up your local development environment - challenges you faced, how you solved them]
-
-### Steps to Reproduce
-
-1. [Step 1]
-2. [Step 2]
-3. [Observed result]
+#### Prerequesities (environment)
+1. Install and wire nvm (macos users may use homebrew)
+```bash
+brew install nvm
+mkdir -p ~/.nvm
+cat << 'EOF' >> ~/.zshrc
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+[ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm"
+EOF
+source ~/.zshrc
+```
+2. Install pnpm and open new terminal subsequently
+```bash
+brew install pnpm
+```
+3. Install Node 22
+```bash
+nvm install 22
+nvm use 22
+```
+#### Repo Setup
+1. Forked `orthonalhq/nous-core` 
+2. Clone forked repo locally and add upstream
+```bash
+git clone git@github.com:jballo/nous-core.git
+cd nous-core
+git remote add upstream https://github.com/orthogonalhq/nous-core.git
+```
+3. Fetch upstream and create feature branch from integration branch (not main):
+```bash
+git fetch upstream
+git checkout -b feat/zhipu-glm-provider upstream/feat/contributor-friendly-inference-provider-surface
+```
+4. Install and verify
+```bash
+pnpm install
+pnpm build
+pnpm test
+```
+### Reproduction Evidence
 
 ### Reproduction Evidence
 
-- **Commit showing reproduction:** [Link to commit in your fork]
-- **Screenshots/logs:** [If applicable]
-- **My findings:** [What you discovered during reproduction]
+* **Commit showing reproduction:** https://github.com/jballo/nous-core/commit/9604e2138f8c42bfa4ce05b2783c7c92bd84b48b
+* **Screenshots/logs:**
+   ![pnpm build result](https://ix7l8rtzlf.ufs.sh/f/fsfgZfmadWBrCacJjLsYyWGqkzhK04c6wj2ZnPfgl18MEvFX)
+   ![pnpm test result](https://ix7l8rtzlf.ufs.sh/f/fsfgZfmadWBrUzwKtW9BTnKGmPoR5OC1wZXEJVdYkHpyftxA)
+* **My findings:** Synced to `feat/contributor-friendly-inference-provider-surface` on branch `feat/zhipu-glm-provider`. After `pnpm install`, build passed. Code gen tests failed due to the order of llms in provider-codegen.test.ts. Second failure was due to missing Mistral API key required. These issue are not relevant to the issue, which in turn will not touch those issues to keep scope of commits for the sole purpose of adding zhipu provider.
 
 ---
 
