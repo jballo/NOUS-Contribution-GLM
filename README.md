@@ -21,20 +21,30 @@ Status Notes so far: I want to work on this issue but I want to make sure that t
 ## Understanding the Issue
 
 ### Problem Description
-
-[In your own words, what's broken or missing?]
+Currently users can't select or route to the Zhipu's models. Zhipu exposes an OpenAI Chat Completions compatible API, so adding it should follow the standard OpenAI compatible leaf path documented in the provider-adapter guides: create a vendor leaf under `provider/zhipu/` that reuses the shared `protocols/openai-api/` protocol, then regenerate the catalogs so the generator discovers it. Existing leaves xai, groq, and mooshot are the templates.
 
 ### Expected Behavior
 
-[What should happen?]
+* A zhipu leaf exists at `self/subcortex/providers/src/providers/zhipu/` without the four required files:
+    * `definition.ts` -> providerDefinition( as const staisfied ProviderDefinitionLeaf), metadata only: `vendorKey`: `'zhipu'`, `protocol: 'chat-completions'`, `adapterKey: 'chat-completions'`, default endpoint + model, `auth` (env var, vault namespace, bearer header, `required: true`, `purpose: 'api_key'`), `modelListEndpoint`/`modelListFormat: 'openai-models'`, capabilities
+    * `adapter.ts` -> re-exports `providerAdapter` fromt eh shared openai-api adapter
+    * `prvider.ts` -> `providerFactory` (`as const satisfies ProviderFactoryModule`) that builds a `ChatCompletionsProvider` from `ZHIPU_API_KEY` / explicit `apiKey`, failing closed when absent
+    * `index.ts` -> re-exports the public surface
+* After running `generate:providers`, `zhipu` appears in `PROVIDER_DEFINITIONS` and resolves via `resolveProviderDefinition('zhipu')`
+* Requests hit the correct endpoint (no doubled version segment), and `parseResponse(...)` returns a text fallback instead of throwing on malformed output
+* `check:generated`, `typecheck`, and the provider teest suite (including a new `zhipu.test.ts`) pass
 
 ### Current Behavior
 
-[What actually happens?]
+There is no Zhipu provider anywhere in the codebase, no `providers/zhipu/` leaf, no entries in the generated catalogs (`provider-definitions.ts`, `provider-adapters.ts`, `provider-factories.ts`), and no tests. Zhipu/GLM models are unreachable.
 
 ### Affected Components
 
-[Which parts of the codebase are involved?]
+* New: `self/subcortex/providers/src/providers/zhipu/{definition,adapter,provider,index}.ts`
+* New: `self/subcortex/providers/src/__tests__/providers/zhipu.test.ts` (modeled on `xai.test.ts`)
+* Reused: `self/subcortex/providers/src/protocols/openai-api/` (shared adapter + `ChatCompletionsProvider`)
+* Regenerated (do not hand-edit): `self/subcortex/providers/src/{provider-definitions,provider-adapters,provider-factories}.ts` via `pnpm --filter @nous/subcortex-providers run generate:providers`
+* Contracts to satisfy: `self/subcortex/providers/src/schemas/{provider-definition,provider-adapter,provider-factory}.ts`
 
 ---
 
