@@ -103,55 +103,69 @@ pnpm test
 * **My findings:** Synced to `feat/contributor-friendly-inference-provider-surface` on branch `feat/zhipu-glm-provider`. After `pnpm install`, build passed. Code gen tests failed due to the order of llms in provider-codegen.test.ts. Second failure was due to missing Mistral API key required. These issue are not relevant to the issue, which in turn will not touch those issues to keep scope of commits for the sole purpose of adding zhipu provider.
 
 ---
+## Analysis
 
-## Solution Approach
+**Root cause:** There is no Zhipu leaf, so the generator never discovers or catalogs the provider — Zhipu/GLM models are simply unreachable. This isn't a bug to fix but a missing driver package to add.
 
-### Analysis
+The one real technical trap is **endpoint path construction**. The shared `ChatCompletionsProvider` builds request URLs as `endpoint.replace(/\/$/, '') + completionsPath`, where `completionsPath` defaults to `/v1/chat/completions` (`protocols/openai-api/provider.ts:73,92`). Zhipu's OpenAI-compatible base already carries a version segment (`https://open.bigmodel.cn/api/paas/v4`), so the default would yield the wrong `…/v4/v1/chat/completions`. This is the same class of doubled-`/v1` defect that was just fixed for xAI (commits `a4dc1950`, `3e7a9749`). It must be handled by overriding `completionsPath` in the factory — exactly as Perplexity does (`providers/perplexity/provider.ts`).
 
-[Your analysis of the root cause - what's causing the issue?]
+A secondary trap is the **credential fallback boundary**: `ChatCompletionsProvider` falls back to `process.env.OPENAI_API_KEY` if no key is passed, so the Zhipu factory must resolve `ZHIPU_API_KEY` explicitly and fail closed, or a stray OpenAI key could be sent to Zhipu's endpoint (see the `#413` note in `perplexity/provider.ts`).
 
-### Proposed Solution
+## Proposed Solution
 
-[High-level description of your fix approach]
+Add a certified `zhipu` provider leaf that **reuses the shared `chat-completions` protocol** (no `implementation.ts`), declaring only Zhipu-specific identity/endpoint/credential metadata. The factory constructs `ChatCompletionsProvider` with a `completionsPath: '/chat/completions'` override and a fail-closed `ZHIPU_API_KEY` resolution. Regenerate the provider catalogs so the generator wires Zhipu into `PROVIDER_DEFINITIONS` / adapters / factories, and add a leaf integration test modeled on `xai.test.ts`.
 
-### Implementation Plan
+## Implementation Plan
 
-Using UMPIRE framework (adapted):
+*Using UMPIRE framework (adapted):*
 
-**Understand:** [Restate the problem]
+**Understand:** NueOS has no Zhipu (GLM) provider. Zhipu speaks the OpenAI Chat Completions wire format, so it should be added as a standard OpenAI-compatible leaf that reuses `protocols/openai-api/`, without touching shared protocol code.
 
-**Match:** [What similar patterns/solutions exist in the codebase?]
+**Match:** Direct precedents already in the repo:
+- `providers/xai/`, `providers/groq/`, `providers/moonshot/` — remote, bearer-auth, `chat-completions` leaves that re-export the shared adapter/provider. Cleanest overall template.
+- `providers/perplexity/` — the precedent for a **non-`/v1` base**: overrides `completionsPath: '/chat/completions'` and resolves its key fail-closed. This is the pattern Zhipu needs because of its `…/paas/v4` base.
+- `provider-definitions.ts` / `provider-adapters.ts` / `provider-factories.ts` — `@generated` catalogs produced by `scripts/generate-provider-aggregates.mjs`.
 
-**Plan:** [Step-by-step implementation plan]
-1. [Modify file X to do Y]
-2. [Add function Z]
-3. [Update tests]
+**Plan:**
+1. **Create `providers/zhipu/definition.ts`** → export `providerDefinition` (`as const satisfies ProviderDefinitionLeaf`): `vendorKey: 'zhipu'`, `displayName: 'Zhipu GLM'`, `providerType: 'text'`, `providerClass: 'remote_text'`, `protocol: 'chat-completions'`, `adapterKey: 'chat-completions'`, `defaultEndpoint: 'https://open.bigmodel.cn/api/paas/v4'`, `defaultModelId` (e.g. `glm-4.6` — confirm), `auth` (`envVar: 'ZHIPU_API_KEY'`, `vaultKeyNamespace: 'zhipu'`, bearer header, `required: true`, `purpose: 'api_key'`), `modelListEndpoint: '/models'` + `modelListFormat: 'openai-models'`, `capabilities` (`streaming`, `modelListing`; omit `nativeToolUse` per the groq/`#390` note unless verified), `isLocal: false`.
+2. **Create `providers/zhipu/adapter.ts`** → re-export `chatCompletionsAdapter as providerAdapter` (+ `createChatCompletionsAdapter`) from `../../protocols/openai-api/adapter.js`.
+3. **Create `providers/zhipu/provider.ts`** → export `providerFactory` (`as const satisfies ProviderFactoryModule`): resolve `options?.apiKey ?? process.env.ZHIPU_API_KEY`, throw `NousError('Zhipu API key required …', 'PROVIDER_AUTH_FAILED', { failoverReasonCode: 'PRV-AUTH-FAILURE' })` if missing, then `new ChatCompletionsProvider(config, { apiKey, completionsPath: '/chat/completions' })`.
+4. **Create `providers/zhipu/index.ts`** → re-export `providerAdapter`, `providerDefinition`, `providerFactory`, and `ChatCompletionsProvider`.
+5. **Regenerate catalogs (do not hand-edit):** `pnpm --filter @nous/subcortex-providers run generate:providers` — wires `zhipu` into the three generated files.
+6. **Add tests:** `__tests__/providers/zhipu.test.ts`, modeled on `xai.test.ts` (see Evaluate).
 
-**Implement:** [Link to your branch/commits as you work]
+**Implement:** Branch `feat/zhipu-glm-provider`. *(Link commits here as work lands.)*
 
-**Review:** [Self-review checklist - does it follow the project's contribution guidelines?]
+**Review — self-review checklist (per `CONTRIBUTING.md`):**
+- [ ] Leaf reuses the shared protocol; no `implementation.ts`, no edits to shared protocol code.
+- [ ] `definition.ts` is metadata-only — no env reads, no network calls.
+- [ ] Generated catalogs updated via the script, not by hand; `check:generated` clean.
+- [ ] Factory fails closed on missing `ZHIPU_API_KEY`; no OpenAI-key fallback reachable.
+- [ ] `completionsPath` override prevents doubled `/v1`; `modelListEndpoint` relative to the `/paas/v4` base.
+- [ ] `nativeToolUse` not advertised unless the shared native tool-use loop is verified for Zhipu.
+- [ ] `parseResponse(...)` returns a text fallback rather than throwing (inherited from shared adapter — asserted in test).
+- [ ] Conventional-commit messages; no unrelated changes in the diff.
 
-**Evaluate:** [How will you verify it works?]
+**Evaluate — verification:**
 
----
+Run:
 
-## Testing Strategy
+```bash
+pnpm --filter @nous/subcortex-providers run check:generated
+pnpm --filter @nous/subcortex-providers run typecheck
+pnpm --filter @nous/subcortex-providers exec vitest run \
+  src/__tests__/provider-codegen.test.ts \
+  src/__tests__/public-exports.test.ts \
+  src/__tests__/providers/zhipu.test.ts
+```
 
-### Unit Tests
-
-- [ ] Test case 1: [Description]
-- [ ] Test case 2: [Description]
-- [ ] Test case 3: [Description]
-
-### Integration Tests
-
-- [ ] Integration scenario 1
-- [ ] Integration scenario 2
-
-### Manual Testing
-
-[What you tested manually and results]
-
+`zhipu.test.ts` asserts:
+- Registered in `PROVIDER_DEFINITIONS`; `resolveProviderDefinition` / `resolveProviderFactory` resolve.
+- `ProviderDefinitionSchema.safeParse` passes; `wellKnownProviderId === deriveBuiltInProviderId('zhipu')`.
+- Auth contract (`ZHIPU_API_KEY`, `vaultKeyNamespace: 'zhipu'`, bearer, `required: true`).
+- Factory instantiates via explicit key and via `ZHIPU_API_KEY`, and **fails closed** without leaking `OPENAI_API_KEY`.
+- Adapter parses a normal GLM response and returns a text fallback on malformed input without throwing.
+- Built URL is `https://open.bigmodel.cn/api/paas/v4/chat/completions` (no doubled `/v1`).
 ---
 
 ## Implementation Notes
