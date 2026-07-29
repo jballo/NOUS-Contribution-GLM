@@ -170,20 +170,51 @@ pnpm --filter @nous/subcortex-providers exec vitest run \
 
 ## Implementation Notes
 
-### Week [X] Progress
+### Week 1 Progress (Jul 24–25, 2026)
 
-[What you built this week, challenges faced, decisions made]
+Added **Zhipu GLM** as a certified inference provider in `subcortex-providers`. Zhipu's `paas/v4` API is OpenAI Ch
+at Completions–compatible, so the leaf reuses the shared `chat-completions` protocol adapter rather than introduci
+ng a new one — the actual code surface is a thin definition + factory, with the bulk of the effort going into gett
+ing the endpoint and auth semantics exactly right.
 
-### Week [Y] Progress
+**Challenges / decisions:**
 
-[Continue documenting as you work]
+- **Doubled version segment.** Zhipu's base URL (`https://api.z.ai/api/paas/v4`) already carries the API version,
+so the OpenAI default of appending `/v1/chat/completions` would produce a broken doubled path. Resolved by overrid
+ing `completionsPath` to `/chat/completions` in the factory and documenting *why* the default doesn't apply (same
+class of bug fixed earlier for the xAI leaf in `3e7a9749` / `a4dc1950`).
+- **Credential leak / fail-closed.** `ChatCompletionsProvider` falls back to `OPENAI_API_KEY` when no key is passe
+d, which would silently send an OpenAI credential to Zhipu's servers. The factory now resolves `ZHIPU_API_KEY` exp
+licitly and throws `PROVIDER_AUTH_FAILED` if it's absent, so the provider refuses to construct rather than leaking
+.
+- **No model discovery.** Zhipu exposes no public model-list endpoint, so discovery is omitted and the runtime fal
+ls back to `defaultModelId` (`glm-4.6`). Documented inline so it doesn't read as an oversight.
+- **Live test gating.** The live smoke test is gated behind `NOUS_ZHIPU_LIVE_BT=1` so it never runs in normal CI a
+nd requires no credential to be present.
 
 ### Code Changes
 
-- **Files modified:** [List]
-- **Key commits:** [Links to important commits]
-- **Approach decisions:** [Why you chose certain approaches]
+- **Files modified:**
+  - Added (the leaf):
+    - `self/subcortex/providers/src/providers/zhipu/definition.ts` — provider definition (endpoint, auth, `chat-co
+mpletions` protocol, streaming + native tool-use capabilities)
+    - `self/subcortex/providers/src/providers/zhipu/provider.ts` — factory with fail-closed key resolution and `co
+mpletionsPath` override
+    - `self/subcortex/providers/src/providers/zhipu/adapter.ts` — re-exports the shared `chatCompletionsAdapter`
+    - `self/subcortex/providers/src/providers/zhipu/index.ts` — leaf barrel
+  - Registration:
+    - `self/subcortex/providers/src/provider-definitions.ts`
+    - `self/subcortex/providers/src/provider-adapters.ts`
+    - `self/subcortex/providers/src/provider-factories.ts`
+  - Tests:
+    - `self/subcortex/providers/src/__tests__/providers/zhipu.test.ts` (178 lines) — definition/adapter/factory/re
+gistry coverage
+    - `self/subcortex/providers/src/__tests__/providers/zhipu.live.test.ts` (97 lines) — gated live blackbox smoke
+ test
+    - Updated expectation counts in `adapter-resolver`, `provider-codegen`, `provider-definition-types`, `provider
+-definitions`, and `provider-pipeline-integration` tests
 
+- **Key commits:**
 ---
 
 ## Pull Request
