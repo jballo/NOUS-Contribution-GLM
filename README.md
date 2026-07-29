@@ -3,7 +3,7 @@
 **Contribution Number:** 2 
 **Student:** Jonathan Ballona Sanchez 
 **Issue:** https://github.com/orthogonalhq/nous-core/issues/320 
-**Status:** Phase 2 
+**Status:** Phase 3 In Progress
 
 ---
 
